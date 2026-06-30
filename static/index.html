@@ -240,12 +240,6 @@ tailwind.config = { darkMode: 'class', theme: { extend: {} } }
 // ═══════════════════════════════════════════
 // GLOBAL STATE
 // ═══════════════════════════════════════════
-const TG = window.Telegram?.WebApp || {};
-const initData = TG.initData || '';
-const initDataUnsafe = TG.initDataUnsafe || {};
-TG.ready?.();
-TG.expand?.();
-
 let CURRENT_USER = null;
 let ALL_USERS = [];
 let IS_ADMIN = false;
@@ -268,7 +262,10 @@ const ALL_ACHIEVEMENTS = {
 async function api(path, method='GET', body=null) {
   const opts = {
     method,
-    headers: { 'X-Telegram-Init-Data': initData, 'Content-Type': 'application/json' },
+    headers: {
+      'X-Telegram-Init-Data': window.initData || '',
+      'Content-Type': 'application/json'
+    },
   };
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(path, opts);
@@ -355,7 +352,7 @@ async function loadProfile() {
     renderProfile(data);
   } catch(e) {
     console.error('loadProfile error:', e);
-    TG.showAlert?.('Ошибка загрузки профиля: ' + e.message);
+    window.Telegram?.WebApp?.showAlert?.('Ошибка загрузки профиля: ' + e.message);
   }
 }
 
@@ -415,10 +412,10 @@ document.getElementById('btn-save').addEventListener('click', async () => {
   try {
     const updated = await api('/api/register', 'POST', { name, position, photo_url: '' });
     renderProfile(updated);
-    TG.HapticFeedback?.notificationOccurred('success');
-    TG.showAlert?.('✅ Профиль сохранён!');
+    window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
+    window.Telegram?.WebApp?.showAlert?.('✅ Профиль сохранён!');
   } catch(e) {
-    TG.showAlert?.('Ошибка: ' + e.message);
+    window.Telegram?.WebApp?.showAlert?.('Ошибка: ' + e.message);
   }
 });
 
@@ -472,7 +469,7 @@ function renderPlayersSelect() {
       if (isSel) selectedPlayers.delete(pid);
       else selectedPlayers.add(pid);
       renderPlayersSelect();
-      TG.HapticFeedback?.selectionChanged?.();
+      window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.();
     });
     container.appendChild(el);
   });
@@ -505,9 +502,9 @@ async function loadScheduled() {
       el.querySelector('button').addEventListener('click', async () => {
         try {
           await api('/api/match/register_intent', 'POST', { match_id: m.match_id });
-          TG.HapticFeedback?.notificationOccurred('success');
+          window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
           loadScheduled();
-        } catch(e) { TG.showAlert?.('Ошибка: ' + e.message); }
+        } catch(e) { window.Telegram?.WebApp?.showAlert?.('Ошибка: ' + e.message); }
       });
       container.appendChild(el);
     });
@@ -516,34 +513,34 @@ async function loadScheduled() {
 
 document.getElementById('btn-create-match').addEventListener('click', async () => {
   if (selectedPlayers.size < 2) {
-    TG.showAlert?.('Выберите минимум 2 игрока');
+    window.Telegram?.WebApp?.showAlert?.('Выберите минимум 2 игрока');
     return;
   }
   const location = document.getElementById('m-location').value.trim();
   const ids = Array.from(selectedPlayers).map(Number);
   try {
-    TG.showConfirm?.('Сформировать команды из ' + ids.length + ' игроков?', async () => {
+    window.Telegram?.WebApp?.showConfirm?.('Сформировать команды из ' + ids.length + ' игроков?', async () => {
       const result = await api('/api/match/create', 'POST', { player_ids: ids, location });
-      TG.HapticFeedback?.notificationOccurred('success');
-      TG.showAlert?.('✅ Матч создан! Команды сбалансированы.');
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
+      window.Telegram?.WebApp?.showAlert?.('✅ Матч создан! Команды сбалансированы.');
       await loadGameScreen();
       switchTab('game');
     });
-  } catch(e) { TG.showAlert?.('Ошибка: ' + e.message); }
+  } catch(e) { window.Telegram?.WebApp?.showAlert?.('Ошибка: ' + e.message); }
 });
 
 document.getElementById('btn-schedule').addEventListener('click', async () => {
   const dt = document.getElementById('m-sched-date').value;
   const loc = document.getElementById('m-sched-loc').value.trim();
-  if (!dt) { TG.showAlert?.('Укажите дату'); return; }
+  if (!dt) { window.Telegram?.WebApp?.showAlert?.('Укажите дату'); return; }
   try {
     await api('/api/match/schedule', 'POST', { scheduled_at: dt, location: loc });
-    TG.HapticFeedback?.notificationOccurred('success');
-    TG.showAlert?.('✅ Матч запланирован!');
+    window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
+    window.Telegram?.WebApp?.showAlert?.('✅ Матч запланирован!');
     document.getElementById('m-sched-date').value = '';
     document.getElementById('m-sched-loc').value = '';
     loadScheduled();
-  } catch(e) { TG.showAlert?.('Ошибка: ' + e.message); }
+  } catch(e) { window.Telegram?.WebApp?.showAlert?.('Ошибка: ' + e.message); }
 });
 
 function switchTab(tab) {
@@ -575,7 +572,6 @@ function renderGame(m) {
   document.getElementById('score-b').textContent = m.score_b || 0;
   document.getElementById('game-location').textContent = m.location || '—';
 
-  // Timer
   if (TIMER_INTERVAL) clearInterval(TIMER_INTERVAL);
   if (m.started_at) {
     const startTime = new Date(m.started_at).getTime();
@@ -620,7 +616,6 @@ function renderTeam(team, players) {
     container.appendChild(el);
   });
 
-  // Attach handlers directly on buttons (not labels) to avoid double-click bug
   container.querySelectorAll('.goal-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.preventDefault();
@@ -635,28 +630,25 @@ function renderTeam(team, players) {
           player_id: pid,
           delta: delta
         });
-        // Update scores
         if (tm === 'a') document.getElementById('score-a').textContent = res.new_score;
         else document.getElementById('score-b').textContent = res.new_score;
-        // Re-render team goals
         renderTeam(tm, res.team_players);
-        TG.HapticFeedback?.impactOccurred?.('light');
+        window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('light');
       } catch(err) {
-        TG.showAlert?.('Ошибка: ' + err.message);
+        window.Telegram?.WebApp?.showAlert?.('Ошибка: ' + err.message);
       }
     });
   });
 }
 
 document.getElementById('btn-finish').addEventListener('click', () => {
-  TG.showConfirm?.('Завершить матч?', async () => {
+  window.Telegram?.WebApp?.showConfirm?.('Завершить матч?', async () => {
     try {
       await api('/api/match/finish', 'POST', { match_id: ACTIVE_MATCH.match_id });
-      TG.HapticFeedback?.notificationOccurred('success');
-      TG.showAlert?.('✅ Матч завершён! Рейтинги пересчитаны.');
-      // Show MVP voting
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
+      window.Telegram?.WebApp?.showAlert?.('✅ Матч завершён! Рейтинги пересчитаны.');
       renderMVPVoting();
-    } catch(e) { TG.showAlert?.('Ошибка: ' + e.message); }
+    } catch(e) { window.Telegram?.WebApp?.showAlert?.('Ошибка: ' + e.message); }
   });
 });
 
@@ -689,12 +681,11 @@ function renderMVPVoting() {
     el.addEventListener('click', async () => {
       try {
         await api('/api/match/vote_mvp', 'POST', { match_id: ACTIVE_MATCH.match_id, candidate_id: parseInt(pid) });
-        TG.HapticFeedback?.notificationOccurred('success');
-        TG.showAlert?.('✅ Голос за MVP принят!');
-        // Highlight
+        window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
+        window.Telegram?.WebApp?.showAlert?.('✅ Голос за MVP принят!');
         candidates.querySelectorAll('div').forEach(d => d.classList.remove('neon-amber','border-amber-500/40'));
         el.classList.add('neon-amber','border-amber-500/40');
-      } catch(e) { TG.showAlert?.('Ошибка: ' + e.message); }
+      } catch(e) { window.Telegram?.WebApp?.showAlert?.('Ошибка: ' + e.message); }
     });
     candidates.appendChild(el);
   });
@@ -709,11 +700,11 @@ document.getElementById('btn-close-voting').addEventListener('click', async () =
     result.classList.remove('hidden');
     if (res.mvp_name) {
       document.getElementById('mvp-winner').textContent = res.mvp_name;
-      TG.HapticFeedback?.notificationOccurred('success');
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
     } else {
       document.getElementById('mvp-winner').textContent = 'Нет голосов';
     }
-  } catch(e) { TG.showAlert?.('Ошибка: ' + e.message); }
+  } catch(e) { window.Telegram?.WebApp?.showAlert?.('Ошибка: ' + e.message); }
 });
 
 // ═══════════════════════════════════════════
@@ -782,11 +773,30 @@ async function loadHistory() {
 // INIT
 // ═══════════════════════════════════════════
 (async function init() {
-  if (!initData) {
-    document.body.innerHTML = '<div class="flex items-center justify-center min-h-screen"><div class="text-center p-6"><div class="text-4xl mb-3">⚠️</div><div class="text-slate-300 font-bold">Приложение доступно только через Telegram</div><div class="text-xs text-slate-500 mt-2">Откройте бота и нажмите кнопку «Открыть»</div></div></div>';
+  // 1. Динамически берем данные из Telegram WebApp или из URL (для ПК)
+  const tgWebApp = window.Telegram?.WebApp || {};
+  let finalInitData = tgWebApp.initData || '';
+
+  if (!finalInitData) {
+    const urlParams = new URLSearchParams(window.location.search);
+    finalInitData = urlParams.get('init_data') || '';
+  }
+
+  // 2. Если совсем ничего не нашли — только тогда блокируем
+  if (!finalInitData) {
+    document.body.innerHTML = '<div class="flex items-center justify-center min-h-screen"><div class="text-center p-6"><div class="text-4xl mb-3">⚠️</div><div class="text-slate-300 font-bold">Приложение доступно только через Telegram</div><div class="text-xs text-slate-500 mt-2">Откройте бота и нажмите кнопку в сообщении</div></div></div>';
     return;
   }
+
+  // 3. Записываем в глобальную переменную для функции api()
+  window.initData = finalInitData;
+
+  // Оповещаем Telegram, что мы готовы
+  tgWebApp.ready?.();
+  tgWebApp.expand?.();
+
   await loadProfile();
+
   // Auto-refresh game screen every 15s if on game tab
   setInterval(() => {
     const gameVisible = !document.getElementById('screen-game').classList.contains('hidden');
