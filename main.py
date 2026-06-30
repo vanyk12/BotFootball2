@@ -113,10 +113,16 @@ async def get_or_create_user_from_initdata(init_data: str) -> dict:
         row = await conn.fetchrow("SELECT * FROM users WHERE id=$1", uid)
         if row:
             return dict(row)
+    
+    # Generate name fallback: first_name + last_name, else username, else ID
+    name = (tg_user.get("first_name","") + " " + tg_user.get("last_name","")).strip()
+    if not name:
+        name = tg_user.get("username", "") or str(uid)
+        
     return {
         "id": uid,
         "username": tg_user.get("username", ""),
-        "name": (tg_user.get("first_name","") + " " + tg_user.get("last_name","")).strip(),
+        "name": name,
         "photo_url": tg_user.get("photo_url", ""),
         "position": "unknown",
         "skill_level": 50.0,
@@ -232,6 +238,7 @@ def mini_app_keyboard() -> InlineKeyboardMarkup:
 @router.message(F.text == "/start")
 async def cmd_start(message: Message):
     uid = message.from_user.id
+    name = message.from_user.full_name or message.from_user.username or str(uid)
     async with pool.acquire() as conn:
         await conn.execute(
             """INSERT INTO users (id, username, name)
@@ -241,7 +248,7 @@ async def cmd_start(message: Message):
                  name=COALESCE($3, users.name)""",
             uid,
             message.from_user.username,
-            (message.from_user.full_name or str(uid))
+            name
         )
     txt = (
         "⚽ <b>Football Match Organizer</b>\n\n"
@@ -512,7 +519,10 @@ async def api_register(req: RegisterReq, request: Request):
     uid = tg_user["id"]
     valid_positions = ["Вратарь","Защитник","Нападающий","unknown"]
     pos = req.position if req.position in valid_positions else "unknown"
-    name = req.name.strip() or tg_user.get("name","")
+    
+    # Fallback for empty name: use tg_user's name, then username, then ID
+    name = req.name.strip() or tg_user.get("name","") or tg_user.get("username","") or str(uid)
+    
     photo = req.photo_url or tg_user.get("photo_url","")
     async with pool.acquire() as conn:
         await conn.execute(
