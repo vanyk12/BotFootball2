@@ -27,7 +27,7 @@ from aiogram.types import (
     Update, Message, CallbackQuery
 )
 from aiogram.enums import ParseMode
-from aiogram.client.default import DefaultBotProperty
+from aiogram.client.default import DefaultBotProperties
 from aiogram.exceptions import TelegramConflictError
 
 # ─────────────────────────────────────────────
@@ -199,7 +199,7 @@ async def check_and_award_achievements(conn, user_id: int):
 # ─────────────────────────────────────────────
 bot = Bot(
     token=BOT_TOKEN,
-    default=DefaultBotProperty(parse_mode=ParseMode.HTML)
+    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
 )
 dp = Dispatcher()
 router = Router()
@@ -575,15 +575,6 @@ async def api_match_score(req: ScoreReq, request: Request):
         else:
             new_score = max(0, row["score_b"] + req.delta)
             await conn.execute("UPDATE matches SET score_b=$1 WHERE id=$2", new_score, req.match_id)
-        # update goals_in_match in team arrays
-        # We track per-player goals_in_match on the team arrays
-        col = "team_a" if req.team == "a" else "team_b"
-        team = row[col] if isinstance(row[col], list) else json.loads(row[col])
-        # We don't know which player scored from this endpoint — increment team total only
-        # For per-player goals, frontend sends player_id via separate mechanism? 
-        # For simplicity: frontend calls /api/match/score with team+delta for scoreboard,
-        # and per-player goals tracked in team json via /api/match/goal endpoint below.
-        # Here we just update the team score.
     return {"ok": True, "new_score": new_score}
 
 class GoalReq(BaseModel):
