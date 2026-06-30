@@ -1,0 +1,798 @@
+
+<!DOCTYPE html>
+<html lang="ru" class="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#020617" />
+<title>⚽ Football Organizer</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = { darkMode: 'class', theme: { extend: {} } }
+</script>
+<style>
+  html, body { background: #020617; color: #e2e8f0; -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
+  * { -webkit-user-select: none; user-select: none; }
+  input, textarea, select { -webkit-user-select: text; user-select: text; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; }
+  .glass { background: rgba(15,23,42,0.6); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(30,41,59,0.8); }
+  .glass-light { background: rgba(30,41,59,0.4); backdrop-filter: blur(8px); border: 1px solid rgba(51,65,85,0.5); }
+  .neon-green { box-shadow: 0 0 20px rgba(34,197,94,0.25); }
+  .neon-amber { box-shadow: 0 0 20px rgba(245,158,11,0.3); }
+  .neon-indigo { box-shadow: 0 0 20px rgba(99,102,241,0.25); }
+  .tab-active { background: linear-gradient(135deg, #10b981, #16a34a); box-shadow: 0 4px 15px rgba(34,197,94,0.35); }
+  .scoreboard { text-shadow: 0 0 12px rgba(245,158,11,0.6), 0 0 30px rgba(245,158,11,0.3); }
+  .btn-tap { transition: all .2s ease; }
+  .btn-tap:active { transform: scale(0.93); }
+  .badge-gk { background: linear-gradient(135deg,#7c3aed,#6d28d9); }
+  .badge-def { background: linear-gradient(135deg,#2563eb,#1d4ed8); }
+  .badge-fwd { background: linear-gradient(135deg,#ea580c,#c2410c); }
+  .badge-unk { background: linear-gradient(135deg,#475569,#334155); }
+  .progress-bg { background: linear-gradient(90deg,#1e293b,#0f172a); }
+  .ach-locked { filter: grayscale(1) opacity(0.35); }
+  .scroll-hide::-webkit-scrollbar { display: none; }
+  .scroll-hide { scrollbar-width: none; }
+  .fade-in { animation: fadeIn .35s ease; }
+  @keyframes fadeIn { from { opacity:0; transform: translateY(8px);} to {opacity:1; transform:none;} }
+  .pulse-live { animation: pulseLive 2s infinite; }
+  @keyframes pulseLive { 0%,100%{opacity:1} 50%{opacity:.55} }
+</style>
+</head>
+<body class="min-h-screen max-w-md mx-auto relative pb-24">
+
+<!-- Header -->
+<header class="sticky top-0 z-40 glass border-b border-slate-800/80 px-4 py-3 flex items-center justify-between">
+  <div class="flex items-center gap-2">
+    <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 to-green-600 flex items-center justify-center text-xl shadow-lg neon-green">⚽</div>
+    <div>
+      <div class="font-black text-sm tracking-tight text-white">FOOTBALL ORGANIZER</div>
+      <div class="text-[10px] text-slate-400 -mt-0.5">ELO · Stats · Teams</div>
+    </div>
+  </div>
+  <div id="elo-badge" class="hidden px-3 py-1.5 rounded-full bg-slate-800/80 border border-emerald-500/30 text-sm font-bold text-emerald-400">
+    <span id="elo-value">50.0</span> ELO
+  </div>
+</header>
+
+<main id="screens" class="px-4 pt-4">
+
+<!-- ============ PROFILE ============ -->
+<section id="screen-profile" class="fade-in">
+  <div class="glass rounded-2xl p-5 mb-4 neon-green">
+    <div class="flex items-center gap-4">
+      <img id="p-avatar" src="" onerror="this.src='https://ui-avatars.com/?background=0f172a&color=10b981&name=?'" class="w-16 h-16 rounded-2xl object-cover border-2 border-emerald-500/40" />
+      <div class="flex-1 min-w-0">
+        <div id="p-name" class="font-bold text-lg text-white truncate">—</div>
+        <div id="p-username" class="text-xs text-slate-400 truncate">—</div>
+        <div id="p-position-badge" class="inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold badge-unk">unknown</div>
+      </div>
+    </div>
+    <div class="mt-4">
+      <div class="flex justify-between text-xs mb-1">
+        <span class="text-slate-400">ELO Рейтинг</span>
+        <span id="p-elo-text" class="font-bold text-emerald-400">50.0 / 100</span>
+      </div>
+      <div class="h-2.5 rounded-full progress-bg overflow-hidden">
+        <div id="p-elo-bar" class="h-full rounded-full bg-gradient-to-r from-emerald-400 to-green-500 transition-all duration-500" style="width:50%"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-3 gap-2 mb-4">
+    <div class="glass-light rounded-xl p-3 text-center">
+      <div id="s-winrate" class="text-xl font-black text-emerald-400">0%</div>
+      <div class="text-[10px] text-slate-400 mt-0.5">Winrate</div>
+    </div>
+    <div class="glass-light rounded-xl p-3 text-center">
+      <div id="s-goals" class="text-xl font-black text-amber-400">0</div>
+      <div class="text-[10px] text-slate-400 mt-0.5">Голы</div>
+    </div>
+    <div class="glass-light rounded-xl p-3 text-center">
+      <div id="s-assists" class="text-xl font-black text-indigo-400">0</div>
+      <div class="text-[10px] text-slate-400 mt-0.5">Ассисты</div>
+    </div>
+    <div class="glass-light rounded-xl p-3 text-center">
+      <div id="s-matches" class="text-xl font-black text-white">0</div>
+      <div class="text-[10px] text-slate-400 mt-0.5">Матчей</div>
+    </div>
+    <div class="glass-light rounded-xl p-3 text-center">
+      <div id="s-wins" class="text-xl font-black text-emerald-400">0</div>
+      <div class="text-[10px] text-slate-400 mt-0.5">Побед</div>
+    </div>
+    <div class="glass-light rounded-xl p-3 text-center">
+      <div id="s-mvp" class="text-xl font-black text-amber-400">0</div>
+      <div class="text-[10px] text-slate-400 mt-0.5">MVP</div>
+    </div>
+  </div>
+
+  <div class="glass rounded-2xl p-4 mb-4">
+    <div class="text-sm font-bold text-white mb-3 flex items-center gap-2">🏆 <span>Достижения</span></div>
+    <div id="ach-grid" class="grid grid-cols-4 gap-2"></div>
+  </div>
+
+  <div class="glass rounded-2xl p-4 mb-4">
+    <div class="text-sm font-bold text-white mb-3">✏️ Редактировать профиль</div>
+    <label class="text-xs text-slate-400">Имя</label>
+    <input id="f-name" type="text" class="w-full mt-1 mb-3 px-3 py-2.5 rounded-xl bg-slate-900/80 border border-slate-700 text-white text-sm outline-none focus:border-emerald-500 transition" placeholder="Ваше имя" />
+    <label class="text-xs text-slate-400">Позиция на поле</label>
+    <select id="f-position" class="w-full mt-1 mb-3 px-3 py-2.5 rounded-xl bg-slate-900/80 border border-slate-700 text-white text-sm outline-none focus:border-emerald-500 transition">
+      <option value="unknown">— Выбрать —</option>
+      <option value="Вратарь">🧤 Вратарь</option>
+      <option value="Защитник">🛡️ Защитник</option>
+      <option value="Нападающий">⚡ Нападающий</option>
+    </select>
+    <button id="btn-save" class="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 text-white font-bold text-sm btn-tap neon-green">Сохранить</button>
+  </div>
+</section>
+
+<!-- ============ MATCH ============ -->
+<section id="screen-match" class="fade-in hidden">
+  <div class="glass rounded-2xl p-4 mb-4">
+    <div class="text-sm font-bold text-white mb-3 flex items-center gap-2">📅 <span>Запланированные матчи</span></div>
+    <div id="scheduled-list" class="space-y-2"></div>
+    <div id="scheduled-empty" class="text-xs text-slate-500 py-3 text-center">Нет запланированных матчей</div>
+  </div>
+
+  <div class="glass rounded-2xl p-4 mb-4">
+    <div class="text-sm font-bold text-white mb-3 flex items-center gap-2">👥 <span>Игроки</span></div>
+    <div id="players-select" class="space-y-2 max-h-[45vh] overflow-y-auto scroll-hide"></div>
+  </div>
+
+  <div class="glass rounded-2xl p-4 mb-4">
+    <label class="text-xs text-slate-400">📍 Локация (необязательно)</label>
+    <input id="m-location" type="text" class="w-full mt-1 mb-3 px-3 py-2.5 rounded-xl bg-slate-900/80 border border-slate-700 text-white text-sm outline-none focus:border-emerald-500 transition" placeholder="Стадион / площадка" />
+    <button id="btn-create-match" class="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 text-white font-bold text-sm btn-tap neon-green">⚽ Сформировать команды</button>
+  </div>
+
+  <div class="glass rounded-2xl p-4 mb-4">
+    <label class="text-xs text-slate-400">📅 Запланировать новый матч</label>
+    <input id="m-sched-date" type="datetime-local" class="w-full mt-1 mb-2 px-3 py-2.5 rounded-xl bg-slate-900/80 border border-slate-700 text-white text-sm outline-none focus:border-emerald-500 transition" />
+    <input id="m-sched-loc" type="text" class="w-full mb-2 px-3 py-2.5 rounded-xl bg-slate-900/80 border border-slate-700 text-white text-sm outline-none focus:border-emerald-500 transition" placeholder="Локация" />
+    <button id="btn-schedule" class="w-full py-3 rounded-xl bg-slate-800 border border-slate-600 text-slate-200 font-bold text-sm btn-tap">Создать расписание</button>
+  </div>
+</section>
+
+<!-- ============ GAME ============ -->
+<section id="screen-game" class="fade-in hidden">
+  <div id="game-empty" class="glass rounded-2xl p-8 text-center mb-4">
+    <div class="text-4xl mb-2">⚽</div>
+    <div class="text-sm text-slate-400">Нет активного матча</div>
+    <div class="text-xs text-slate-500 mt-1">Создайте матч на вкладке «Матч»</div>
+  </div>
+
+  <div id="game-active" class="hidden">
+    <!-- Scoreboard -->
+    <div class="glass rounded-2xl p-5 mb-4 neon-amber">
+      <div class="text-center text-[10px] text-slate-400 uppercase tracking-widest mb-2">
+        <span id="game-timer" class="text-amber-400 font-mono font-bold pulse-live">00:00</span>
+      </div>
+      <div class="flex items-center justify-center gap-4">
+        <div class="flex-1 text-center">
+          <div class="text-xs text-emerald-400 font-bold uppercase">Команда А</div>
+          <div id="score-a" class="text-6xl font-black text-emerald-400 scoreboard">0</div>
+        </div>
+        <div class="text-2xl text-slate-600 font-black">:</div>
+        <div class="flex-1 text-center">
+          <div class="text-xs text-indigo-400 font-bold uppercase">Команда Б</div>
+          <div id="score-b" class="text-6xl font-black text-indigo-400 scoreboard">0</div>
+        </div>
+      </div>
+      <div class="text-center mt-2 text-xs text-slate-500" id="game-location">—</div>
+    </div>
+
+    <!-- Team A -->
+    <div class="glass rounded-2xl p-4 mb-3 border-l-2 border-emerald-500/50">
+      <div class="text-sm font-bold text-emerald-400 mb-2 flex items-center gap-2">🟢 Команда А</div>
+      <div id="team-a-list" class="space-y-2"></div>
+    </div>
+
+    <!-- Team B -->
+    <div class="glass rounded-2xl p-4 mb-3 border-l-2 border-indigo-500/50">
+      <div class="text-sm font-bold text-indigo-400 mb-2 flex items-center gap-2">🔵 Команда Б</div>
+      <div id="team-b-list" class="space-y-2"></div>
+    </div>
+
+    <!-- Finish -->
+    <button id="btn-finish" class="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 text-white font-bold text-sm btn-tap neon-amber mb-4">🏁 Завершить матч</button>
+
+    <!-- MVP Voting -->
+    <div id="mvp-block" class="hidden glass rounded-2xl p-4 mb-4 border border-amber-500/30">
+      <div class="text-sm font-bold text-amber-400 mb-3 flex items-center gap-2">🏆 <span>Голосование за MVP</span></div>
+      <div id="mvp-candidates" class="space-y-2"></div>
+      <button id="btn-close-voting" class="w-full mt-3 py-3 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold text-sm btn-tap">Закрыть голосование</button>
+      <div id="mvp-result" class="hidden text-center py-4">
+        <div class="text-3xl mb-1">🏆</div>
+        <div class="text-xs text-slate-400">MVP матча:</div>
+        <div id="mvp-winner" class="text-lg font-black text-amber-400">—</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ HISTORY ============ -->
+<section id="screen-history" class="fade-in hidden">
+  <div class="text-sm font-bold text-white mb-3 px-1 flex items-center gap-2">📜 <span>История матчей</span></div>
+  <div id="history-list" class="space-y-3"></div>
+  <div id="history-empty" class="text-xs text-slate-500 py-8 text-center">Нет сыгранных матчей</div>
+</section>
+
+</main>
+
+<!-- Bottom Nav -->
+<nav class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md z-40 glass border-t border-slate-800/80 px-2 py-2">
+  <div class="grid grid-cols-4 gap-1">
+    <button data-tab="profile" class="nav-btn tab-active flex flex-col items-center py-2 rounded-xl btn-tap">
+      <span class="text-lg">👤</span><span class="text-[9px] font-bold mt-0.5 text-white">Профиль</span>
+    </button>
+    <button data-tab="match" class="nav-btn flex flex-col items-center py-2 rounded-xl btn-tap">
+      <span class="text-lg">⚽</span><span class="text-[9px] font-bold mt-0.5 text-slate-400">Матч</span>
+    </button>
+    <button data-tab="game" class="nav-btn flex flex-col items-center py-2 rounded-xl btn-tap">
+      <span class="text-lg">🎮</span><span class="text-[9px] font-bold mt-0.5 text-slate-400">Игра</span>
+    </button>
+    <button data-tab="history" class="nav-btn flex flex-col items-center py-2 rounded-xl btn-tap">
+      <span class="text-lg">📜</span><span class="text-[9px] font-bold mt-0.5 text-slate-400">История</span>
+    </button>
+  </div>
+</nav>
+
+<script>
+// ═══════════════════════════════════════════
+// GLOBAL STATE
+// ═══════════════════════════════════════════
+const TG = window.Telegram?.WebApp || {};
+const initData = TG.initData || '';
+const initDataUnsafe = TG.initDataUnsafe || {};
+TG.ready?.();
+TG.expand?.();
+
+let CURRENT_USER = null;
+let ALL_USERS = [];
+let IS_ADMIN = false;
+let ACTIVE_MATCH = null;
+let TIMER_INTERVAL = null;
+
+const ALL_ACHIEVEMENTS = {
+  hat_trick:  { emoji: '🎩', name: 'Hat-trick',  desc: '3+ голов за матч' },
+  veteran:    { emoji: '🎖️', name: 'Veteran',    desc: '10+ матчей' },
+  match_hero: { emoji: '🏆', name: 'Match Hero', desc: 'Стал MVP' },
+  striker:    { emoji: '⚡', name: 'Striker',    desc: '10+ голов всего' },
+  playmaker:  { emoji: '🎯', name: 'Playmaker',  desc: '10+ ассистов' },
+  wall:       { emoji: '🧱', name: 'The Wall',   desc: 'Вратарь, 5+ побед' },
+  legend:     { emoji: '👑', name: 'Legend',     desc: 'ELO 80+' },
+};
+
+// ═══════════════════════════════════════════
+// API
+// ═══════════════════════════════════════════
+async function api(path, method='GET', body=null) {
+  const opts = {
+    method,
+    headers: { 'X-Telegram-Init-Data': initData, 'Content-Type': 'application/json' },
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(path, opts);
+  if (!res.ok) {
+    let msg = res.statusText;
+    try { const j = await res.json(); msg = j.detail || JSON.stringify(j); } catch(e){}
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+// ═══════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════
+function posBadgeClass(pos) {
+  if (pos === 'Вратарь') return 'badge-gk';
+  if (pos === 'Защитник') return 'badge-def';
+  if (pos === 'Нападающий') return 'badge-fwd';
+  return 'badge-unk';
+}
+
+function posShort(pos) {
+  if (pos === 'Вратарь') return 'GK';
+  if (pos === 'Защитник') return 'DEF';
+  if (pos === 'Нападающий') return 'FWD';
+  return '?';
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+}
+
+function fmtDuration(ms) {
+  const total = Math.floor(ms / 1000);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+// ═══════════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════════
+document.querySelectorAll('.nav-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab;
+    document.querySelectorAll('.nav-btn').forEach(b => {
+      b.classList.remove('tab-active');
+      b.querySelector('span:last-child').classList.remove('text-white');
+      b.querySelector('span:last-child').classList.add('text-slate-400');
+    });
+    btn.classList.add('tab-active');
+    btn.querySelector('span:last-child').classList.add('text-white');
+    btn.querySelector('span:last-child').classList.remove('text-slate-400');
+
+    document.querySelectorAll('section[id^="screen-"]').forEach(s => s.classList.add('hidden'));
+    const target = document.getElementById('screen-' + tab);
+    target.classList.remove('hidden');
+    target.classList.remove('fade-in');
+    void target.offsetWidth;
+    target.classList.add('fade-in');
+
+    if (tab === 'match') loadMatchScreen();
+    if (tab === 'game') loadGameScreen();
+    if (tab === 'history') loadHistory();
+    if (tab === 'profile') loadProfile();
+  });
+});
+
+// ═══════════════════════════════════════════
+// PROFILE SCREEN
+// ═══════════════════════════════════════════
+async function loadProfile() {
+  try {
+    const data = await api('/api/me');
+    CURRENT_USER = data;
+    renderProfile(data);
+  } catch(e) {
+    console.error('loadProfile error:', e);
+    TG.showAlert?.('Ошибка загрузки профиля: ' + e.message);
+  }
+}
+
+function renderProfile(u) {
+  const avatar = u.photo_url || `https://ui-avatars.com/?background=0f172a&color=10b981&name=${encodeURIComponent(u.name||'?')}`;
+  document.getElementById('p-avatar').src = avatar;
+  document.getElementById('p-name').textContent = u.name || 'Без имени';
+  document.getElementById('p-username').textContent = u.username ? '@' + u.username : '';
+  document.getElementById('f-name').value = u.name || '';
+
+  const pos = u.position || 'unknown';
+  const badge = document.getElementById('p-position-badge');
+  badge.textContent = posShort(pos) + ' ' + (pos === 'unknown' ? '—' : pos);
+  badge.className = 'inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold ' + posBadgeClass(pos);
+
+  const elo = u.skill_level || 50.0;
+  document.getElementById('p-elo-text').textContent = elo.toFixed(1) + ' / 100';
+  document.getElementById('p-elo-bar').style.width = Math.min(100, elo) + '%';
+
+  document.getElementById('elo-badge').classList.remove('hidden');
+  document.getElementById('elo-value').textContent = elo.toFixed(1);
+
+  if (pos !== 'unknown') document.getElementById('f-position').value = pos;
+
+  const total = (u.wins||0) + (u.losses||0) + (u.draws||0);
+  const wr = total > 0 ? Math.round((u.wins||0) / total * 100) : 0;
+  document.getElementById('s-winrate').textContent = wr + '%';
+  document.getElementById('s-goals').textContent = u.goals || 0;
+  document.getElementById('s-assists').textContent = u.assists || 0;
+  document.getElementById('s-matches').textContent = u.matches_played || 0;
+  document.getElementById('s-wins').textContent = u.wins || 0;
+  document.getElementById('s-mvp').textContent = u.mvp_count || 0;
+
+  renderAchievements(u.achievements || []);
+}
+
+function renderAchievements(unlocked) {
+  const grid = document.getElementById('ach-grid');
+  grid.innerHTML = '';
+  const unlockedSet = new Set(unlocked);
+  for (const [code, ach] of Object.entries(ALL_ACHIEVEMENTS)) {
+    const isUnlocked = unlockedSet.has(code);
+    const el = document.createElement('div');
+    el.className = 'glass-light rounded-xl p-2 flex flex-col items-center justify-center aspect-square cursor-pointer transition-all duration-300 ' + (isUnlocked ? 'neon-green' : '');
+    el.innerHTML = `
+      <div class="text-2xl ${isUnlocked ? '' : 'ach-locked'}">${ach.emoji}</div>
+      <div class="text-[8px] text-center mt-1 ${isUnlocked ? 'text-slate-200' : 'text-slate-500'}">${ach.name}</div>
+    `;
+    el.title = ach.desc;
+    grid.appendChild(el);
+  }
+}
+
+document.getElementById('btn-save').addEventListener('click', async () => {
+  const name = document.getElementById('f-name').value.trim();
+  const position = document.getElementById('f-position').value;
+  try {
+    const updated = await api('/api/register', 'POST', { name, position, photo_url: '' });
+    renderProfile(updated);
+    TG.HapticFeedback?.notificationOccurred('success');
+    TG.showAlert?.('✅ Профиль сохранён!');
+  } catch(e) {
+    TG.showAlert?.('Ошибка: ' + e.message);
+  }
+});
+
+// ═══════════════════════════════════════════
+// MATCH SCREEN
+// ═══════════════════════════════════════════
+const selectedPlayers = new Set();
+
+async function loadMatchScreen() {
+  await Promise.all([loadUsersList(), loadScheduled()]);
+}
+
+async function loadUsersList() {
+  try {
+    const data = await api('/api/users');
+    IS_ADMIN = data.is_admin;
+    ALL_USERS = data.users || [];
+    renderPlayersSelect();
+  } catch(e) {
+    console.error('loadUsersList:', e);
+  }
+}
+
+function renderPlayersSelect() {
+  const container = document.getElementById('players-select');
+  container.innerHTML = '';
+  ALL_USERS.forEach(u => {
+    const pid = String(u.id);
+    const isSel = selectedPlayers.has(pid);
+    const elo = (u.skill_level || 50).toFixed(1);
+    const pos = u.position || 'unknown';
+    const avatar = u.photo_url || `https://ui-avatars.com/?background=1e293b&color=10b981&name=${encodeURIComponent(u.name||'?')}`;
+
+    const el = document.createElement('div');
+    el.className = 'flex items-center gap-3 p-2.5 rounded-xl transition-all duration-300 cursor-pointer ' +
+      (isSel ? 'bg-emerald-500/15 border border-emerald-500/40 neon-green' : 'glass-light border border-transparent');
+    el.innerHTML = `
+      <img src="${avatar}" onerror="this.src='https://ui-avatars.com/?background=1e293b&color=10b981&name=?'" class="w-10 h-10 rounded-lg object-cover" />
+      <div class="flex-1 min-w-0">
+        <div class="font-bold text-sm text-white truncate">${escapeHtml(u.name||u.username||pid)}</div>
+        <div class="flex items-center gap-1.5 mt-0.5">
+          <span class="px-1.5 py-0.5 rounded text-[8px] font-bold ${posBadgeClass(pos)}">${posShort(pos)}</span>
+          <span class="text-[10px] text-slate-400">${elo} ELO</span>
+        </div>
+      </div>
+      <div class="w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${isSel ? 'bg-emerald-500 border-emerald-500' : 'border-slate-600'}">
+        ${isSel ? '<svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>' : ''}
+      </div>
+    `;
+    el.addEventListener('click', () => {
+      if (isSel) selectedPlayers.delete(pid);
+      else selectedPlayers.add(pid);
+      renderPlayersSelect();
+      TG.HapticFeedback?.selectionChanged?.();
+    });
+    container.appendChild(el);
+  });
+}
+
+async function loadScheduled() {
+  try {
+    const list = await api('/api/match/scheduled');
+    const container = document.getElementById('scheduled-list');
+    const empty = document.getElementById('scheduled-empty');
+    container.innerHTML = '';
+    if (!list || list.length === 0) {
+      empty.classList.remove('hidden');
+      return;
+    }
+    empty.classList.add('hidden');
+    list.forEach(m => {
+      const el = document.createElement('div');
+      el.className = 'glass-light rounded-xl p-3 flex items-center justify-between';
+      const isReg = (m.reg_ids || []).includes(String(CURRENT_USER?.id));
+      el.innerHTML = `
+        <div>
+          <div class="text-sm font-bold text-white">${fmtDate(m.scheduled_at)}</div>
+          <div class="text-xs text-slate-400">📍 ${escapeHtml(m.location||'—')} · 👥 ${m.reg_count}</div>
+        </div>
+        <button class="px-3 py-1.5 rounded-lg text-xs font-bold btn-tap ${isReg ? 'bg-emerald-500 text-white' : 'bg-slate-700 text-slate-300'}">
+          ${isReg ? '✓ Иду' : 'Я приду'}
+        </button>
+      `;
+      el.querySelector('button').addEventListener('click', async () => {
+        try {
+          await api('/api/match/register_intent', 'POST', { match_id: m.match_id });
+          TG.HapticFeedback?.notificationOccurred('success');
+          loadScheduled();
+        } catch(e) { TG.showAlert?.('Ошибка: ' + e.message); }
+      });
+      container.appendChild(el);
+    });
+  } catch(e) { console.error('loadScheduled:', e); }
+}
+
+document.getElementById('btn-create-match').addEventListener('click', async () => {
+  if (selectedPlayers.size < 2) {
+    TG.showAlert?.('Выберите минимум 2 игрока');
+    return;
+  }
+  const location = document.getElementById('m-location').value.trim();
+  const ids = Array.from(selectedPlayers).map(Number);
+  try {
+    TG.showConfirm?.('Сформировать команды из ' + ids.length + ' игроков?', async () => {
+      const result = await api('/api/match/create', 'POST', { player_ids: ids, location });
+      TG.HapticFeedback?.notificationOccurred('success');
+      TG.showAlert?.('✅ Матч создан! Команды сбалансированы.');
+      await loadGameScreen();
+      switchTab('game');
+    });
+  } catch(e) { TG.showAlert?.('Ошибка: ' + e.message); }
+});
+
+document.getElementById('btn-schedule').addEventListener('click', async () => {
+  const dt = document.getElementById('m-sched-date').value;
+  const loc = document.getElementById('m-sched-loc').value.trim();
+  if (!dt) { TG.showAlert?.('Укажите дату'); return; }
+  try {
+    await api('/api/match/schedule', 'POST', { scheduled_at: dt, location: loc });
+    TG.HapticFeedback?.notificationOccurred('success');
+    TG.showAlert?.('✅ Матч запланирован!');
+    document.getElementById('m-sched-date').value = '';
+    document.getElementById('m-sched-loc').value = '';
+    loadScheduled();
+  } catch(e) { TG.showAlert?.('Ошибка: ' + e.message); }
+});
+
+function switchTab(tab) {
+  document.querySelector(`.nav-btn[data-tab="${tab}"]`).click();
+}
+
+// ═══════════════════════════════════════════
+// GAME SCREEN
+// ═══════════════════════════════════════════
+async function loadGameScreen() {
+  try {
+    const data = await api('/api/match/active');
+    if (!data.active) {
+      document.getElementById('game-empty').classList.remove('hidden');
+      document.getElementById('game-active').classList.add('hidden');
+      ACTIVE_MATCH = null;
+      if (TIMER_INTERVAL) { clearInterval(TIMER_INTERVAL); TIMER_INTERVAL = null; }
+      return;
+    }
+    ACTIVE_MATCH = data;
+    document.getElementById('game-empty').classList.add('hidden');
+    document.getElementById('game-active').classList.remove('hidden');
+    renderGame(data);
+  } catch(e) { console.error('loadGameScreen:', e); }
+}
+
+function renderGame(m) {
+  document.getElementById('score-a').textContent = m.score_a || 0;
+  document.getElementById('score-b').textContent = m.score_b || 0;
+  document.getElementById('game-location').textContent = m.location || '—';
+
+  // Timer
+  if (TIMER_INTERVAL) clearInterval(TIMER_INTERVAL);
+  if (m.started_at) {
+    const startTime = new Date(m.started_at).getTime();
+    const updateTimer = () => {
+      const elapsed = Date.now() - startTime;
+      document.getElementById('game-timer').textContent = fmtDuration(elapsed);
+    };
+    updateTimer();
+    TIMER_INTERVAL = setInterval(updateTimer, 1000);
+  }
+
+  renderTeam('a', m.team_a || []);
+  renderTeam('b', m.team_b || []);
+}
+
+function renderTeam(team, players) {
+  const containerId = team === 'a' ? 'team-a-list' : 'team-b-list';
+  const container = document.getElementById(containerId);
+  container.innerHTML = '';
+  const teamColor = team === 'a' ? 'emerald' : 'indigo';
+  const goalsColor = team === 'a' ? 'text-emerald-400' : 'text-indigo-400';
+
+  players.forEach(p => {
+    const pid = String(p.id);
+    const goals = p.goals_in_match || 0;
+    const pos = p.position || 'unknown';
+    const el = document.createElement('div');
+    el.className = 'flex items-center gap-2 p-2 rounded-xl glass-light transition-all';
+    el.innerHTML = `
+      <div class="flex-1 min-w-0">
+        <div class="text-sm font-bold text-white truncate">${escapeHtml(p.name||pid)}</div>
+        <div class="flex items-center gap-1.5 mt-0.5">
+          <span class="px-1.5 py-0.5 rounded text-[8px] font-bold ${posBadgeClass(pos)}">${posShort(pos)}</span>
+          <span class="text-[10px] ${goalsColor} font-bold">⚽ ${goals}</span>
+        </div>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <button data-pid="${pid}" data-team="${team}" data-delta="-1" class="goal-btn w-9 h-9 rounded-lg bg-slate-800 border border-slate-600 text-slate-300 font-black text-lg flex items-center justify-center btn-tap">−</button>
+        <button data-pid="${pid}" data-team="${team}" data-delta="1" class="goal-btn w-9 h-9 rounded-lg bg-${teamColor}-500/20 border border-${teamColor}-500/50 text-${teamColor}-400 font-black text-lg flex items-center justify-center btn-tap">+</button>
+      </div>
+    `;
+    container.appendChild(el);
+  });
+
+  // Attach handlers directly on buttons (not labels) to avoid double-click bug
+  container.querySelectorAll('.goal-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const pid = btn.dataset.pid;
+      const tm = btn.dataset.team;
+      const delta = parseInt(btn.dataset.delta);
+      try {
+        const res = await api('/api/match/goal', 'POST', {
+          match_id: ACTIVE_MATCH.match_id,
+          team: tm,
+          player_id: pid,
+          delta: delta
+        });
+        // Update scores
+        if (tm === 'a') document.getElementById('score-a').textContent = res.new_score;
+        else document.getElementById('score-b').textContent = res.new_score;
+        // Re-render team goals
+        renderTeam(tm, res.team_players);
+        TG.HapticFeedback?.impactOccurred?.('light');
+      } catch(err) {
+        TG.showAlert?.('Ошибка: ' + err.message);
+      }
+    });
+  });
+}
+
+document.getElementById('btn-finish').addEventListener('click', () => {
+  TG.showConfirm?.('Завершить матч?', async () => {
+    try {
+      await api('/api/match/finish', 'POST', { match_id: ACTIVE_MATCH.match_id });
+      TG.HapticFeedback?.notificationOccurred('success');
+      TG.showAlert?.('✅ Матч завершён! Рейтинги пересчитаны.');
+      // Show MVP voting
+      renderMVPVoting();
+    } catch(e) { TG.showAlert?.('Ошибка: ' + e.message); }
+  });
+});
+
+function renderMVPVoting() {
+  const block = document.getElementById('mvp-block');
+  const candidates = document.getElementById('mvp-candidates');
+  const result = document.getElementById('mvp-result');
+  block.classList.remove('hidden');
+  candidates.innerHTML = '';
+  result.classList.add('hidden');
+
+  const all = [...(ACTIVE_MATCH.team_a||[]), ...(ACTIVE_MATCH.team_b||[])]
+    .filter(p => String(p.id) !== String(CURRENT_USER?.id));
+
+  all.forEach(p => {
+    const pid = String(p.id);
+    const pos = p.position || 'unknown';
+    const el = document.createElement('div');
+    el.className = 'flex items-center gap-3 p-2.5 rounded-xl glass-light btn-tap cursor-pointer';
+    el.innerHTML = `
+      <div class="flex-1 min-w-0">
+        <div class="text-sm font-bold text-white truncate">${escapeHtml(p.name||pid)}</div>
+        <div class="flex items-center gap-1.5 mt-0.5">
+          <span class="px-1.5 py-0.5 rounded text-[8px] font-bold ${posBadgeClass(pos)}">${posShort(pos)}</span>
+          ${p.goals_in_match ? `<span class="text-[10px] text-amber-400">⚽ ${p.goals_in_match}</span>` : ''}
+        </div>
+      </div>
+      <div class="text-amber-400 text-lg">🏆</div>
+    `;
+    el.addEventListener('click', async () => {
+      try {
+        await api('/api/match/vote_mvp', 'POST', { match_id: ACTIVE_MATCH.match_id, candidate_id: parseInt(pid) });
+        TG.HapticFeedback?.notificationOccurred('success');
+        TG.showAlert?.('✅ Голос за MVP принят!');
+        // Highlight
+        candidates.querySelectorAll('div').forEach(d => d.classList.remove('neon-amber','border-amber-500/40'));
+        el.classList.add('neon-amber','border-amber-500/40');
+      } catch(e) { TG.showAlert?.('Ошибка: ' + e.message); }
+    });
+    candidates.appendChild(el);
+  });
+}
+
+document.getElementById('btn-close-voting').addEventListener('click', async () => {
+  try {
+    const res = await api('/api/match/close_voting', 'POST', { match_id: ACTIVE_MATCH.match_id });
+    document.getElementById('mvp-candidates').classList.add('hidden');
+    document.getElementById('btn-close-voting').classList.add('hidden');
+    const result = document.getElementById('mvp-result');
+    result.classList.remove('hidden');
+    if (res.mvp_name) {
+      document.getElementById('mvp-winner').textContent = res.mvp_name;
+      TG.HapticFeedback?.notificationOccurred('success');
+    } else {
+      document.getElementById('mvp-winner').textContent = 'Нет голосов';
+    }
+  } catch(e) { TG.showAlert?.('Ошибка: ' + e.message); }
+});
+
+// ═══════════════════════════════════════════
+// HISTORY SCREEN
+// ═══════════════════════════════════════════
+async function loadHistory() {
+  try {
+    const list = await api('/api/matches/history');
+    const container = document.getElementById('history-list');
+    const empty = document.getElementById('history-empty');
+    container.innerHTML = '';
+    if (!list || list.length === 0) {
+      empty.classList.remove('hidden');
+      return;
+    }
+    empty.classList.add('hidden');
+
+    list.forEach(m => {
+      const sa = m.score_a, sb = m.score_b;
+      const aWin = sa > sb, bWin = sb > sa, draw = sa === sb;
+      const nm = m.name_map || {};
+
+      const teamAHtml = (m.team_a||[]).map(p => {
+        const info = nm[String(p.id)] || {};
+        return `<span class="inline-block px-1.5 py-0.5 rounded text-[9px] bg-emerald-500/15 text-emerald-300 mb-0.5">${escapeHtml(info.name||p.name||p.id)}</span>`;
+      }).join(' ');
+      const teamBHtml = (m.team_b||[]).map(p => {
+        const info = nm[String(p.id)] || {};
+        return `<span class="inline-block px-1.5 py-0.5 rounded text-[9px] bg-indigo-500/15 text-indigo-300 mb-0.5">${escapeHtml(info.name||p.name||p.id)}</span>`;
+      }).join(' ');
+
+      const el = document.createElement('div');
+      el.className = 'glass rounded-2xl p-4 transition-all duration-300';
+      el.innerHTML = `
+        <div class="flex items-center justify-between mb-3">
+          <div class="text-xs text-slate-400">${fmtDate(m.finished_at)}</div>
+          <div class="text-[10px] text-slate-500">${escapeHtml(m.location||'—')}</div>
+        </div>
+        <div class="flex items-center justify-center gap-3 mb-3">
+          <div class="flex-1 text-center ${aWin ? 'text-emerald-400' : 'text-slate-400'}">
+            <div class="text-[9px] uppercase font-bold">Команда А</div>
+            <div class="text-4xl font-black ${aWin ? 'scoreboard text-emerald-400' : 'text-slate-500'}">${sa}</div>
+            ${aWin ? '<div class="text-[9px] text-emerald-400 font-bold">ПОБЕДА</div>' : ''}
+          </div>
+          <div class="text-xl text-slate-600 font-bold">:</div>
+          <div class="flex-1 text-center ${bWin ? 'text-indigo-400' : 'text-slate-400'}">
+            <div class="text-[9px] uppercase font-bold">Команда Б</div>
+            <div class="text-4xl font-black ${bWin ? 'scoreboard text-indigo-400' : 'text-slate-500'}">${sb}</div>
+            ${bWin ? '<div class="text-[9px] text-indigo-400 font-bold">ПОБЕДА</div>' : ''}
+          </div>
+        </div>
+        ${draw ? '<div class="text-center text-[10px] text-amber-400 font-bold mb-2">🤝 НИЧЬЯ</div>' : ''}
+        <div class="border-t border-slate-800 pt-2">
+          <div class="text-[9px] text-emerald-500 font-bold mb-1">🟢 Команда А</div>
+          <div class="flex flex-wrap gap-1 mb-2">${teamAHtml || '<span class="text-[10px] text-slate-500">—</span>'}</div>
+          <div class="text-[9px] text-indigo-500 font-bold mb-1">🔵 Команда Б</div>
+          <div class="flex flex-wrap gap-1">${teamBHtml || '<span class="text-[10px] text-slate-500">—</span>'}</div>
+        </div>
+      `;
+      container.appendChild(el);
+    });
+  } catch(e) { console.error('loadHistory:', e); }
+}
+
+// ═══════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════
+(async function init() {
+  if (!initData) {
+    document.body.innerHTML = '<div class="flex items-center justify-center min-h-screen"><div class="text-center p-6"><div class="text-4xl mb-3">⚠️</div><div class="text-slate-300 font-bold">Приложение доступно только через Telegram</div><div class="text-xs text-slate-500 mt-2">Откройте бота и нажмите кнопку «Открыть»</div></div></div>';
+    return;
+  }
+  await loadProfile();
+  // Auto-refresh game screen every 15s if on game tab
+  setInterval(() => {
+    const gameVisible = !document.getElementById('screen-game').classList.contains('hidden');
+    if (gameVisible && ACTIVE_MATCH) loadGameScreen();
+  }, 15000);
+})();
+</script>
+</body>
+</html>
