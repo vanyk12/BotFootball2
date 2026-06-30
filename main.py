@@ -34,12 +34,12 @@ from aiogram.exceptions import TelegramConflictError
 # CONFIG
 # ─────────────────────────────────────────────
 BOT_TOKEN    = os.getenv("BOT_TOKEN", "")
-WEBHOOK_URL  = os.getenv("WEBHOOK_URL", "")           # e.g. https://myapp.railway.app
+WEBHOOK_URL  = os.getenv("WEBHOOK_URL", "")
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 ADMIN_IDS    = set(int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip())
 
 BOT_USERNAME = os.getenv("BOT_USERNAME", "football_organizer_bot")
-MINI_APP_URL = os.getenv("MINI_APP_URL", WEBHOOK_URL)  # mini app served from same origin
+MINI_APP_URL = os.getenv("MINI_APP_URL", WEBHOOK_URL)
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN env var is required")
@@ -56,7 +56,6 @@ pool: Optional[asyncpg.Pool] = None
 
 async def init_db():
     global pool
-    # statement_cache_size=0 is REQUIRED for pgbouncer/Supabase compatibility
     pool = await asyncpg.create_pool(
         DATABASE_URL,
         statement_cache_size=0,
@@ -68,7 +67,6 @@ async def init_db():
         schema_sql = f.read()
     async with pool.acquire() as conn:
         await conn.execute(schema_sql)
-    # Apply migrations
     migration_path = os.path.join(os.path.dirname(__file__), "migration.sql")
     if os.path.exists(migration_path):
         with open(migration_path, "r") as f:
@@ -81,7 +79,7 @@ async def init_db():
 # TELEGRAM INIT-DATA VALIDATION
 # ─────────────────────────────────────────────
 def validate_init_data(init_data: str) -> dict:
-    """Validate Telegram WebApp initData via HMAC-SHA256. Returns parsed user dict or raises."""
+    """Validate Telegram WebApp initData via HMAC-SHA256."""
     if not init_data:
         raise ValueError("empty init_data")
     parsed = urllib.parse.parse_qs(init_data)
@@ -115,7 +113,6 @@ async def get_or_create_user_from_initdata(init_data: str) -> dict:
         row = await conn.fetchrow("SELECT * FROM users WHERE id=$1", uid)
         if row:
             return dict(row)
-    # not registered yet — return basics from initData
     return {
         "id": uid,
         "username": tg_user.get("username", ""),
@@ -129,16 +126,33 @@ async def get_or_create_user_from_initdata(init_data: str) -> dict:
         "created_at": None,
     }
 
+async def get_user_from_request(request: Request) -> dict:
+    """
+    Extract init_data flexibly:
+    - From 'Authorization: Bearer <initData>' header
+    - From '?init_data=<...>' query parameter (critical for Telegram Desktop)
+    - Fallback to 'X-Telegram-Init-Data' header
+    """
+    init_data = ""
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        init_data = auth_header[7:]
+    if not init_data:
+        init_data = request.query_params.get("init_data", "")
+    if not init_data:
+        init_data = request.headers.get("X-Telegram-Init-Data", "")
+    
+    if not init_data:
+        raise HTTPException(401, "missing init_data")
+    try:
+        return await get_or_create_user_from_initdata(init_data)
+    except ValueError as e:
+        raise HTTPException(403, f"invalid init_data: {e}")
+
 # ─────────────────────────────────────────────
-# ELO BALANCING (Greedy)
+# ELO BALANCING & RECALCULATION
 # ─────────────────────────────────────────────
 def balance_teams(players: list[dict]) -> tuple[list[dict], list[dict]]:
-    """
-    Greedy ELO-based team balancing.
-    Sort players by skill descending, snake-draft into two teams,
-    then swap assignments greedily to minimize skill difference.
-    Each player dict gets: {id, name, username, position, skill_level, goals_in_match:0}
-    """
     sorted_players = sorted(players, key=lambda p: p.get("skill_level", 50.0), reverse=True)
     team_a: list[dict] = []
     team_b: list[dict] = []
@@ -161,13 +175,7 @@ def team_skill(team: list[dict]) -> float:
     if not team: return 50.0
     return sum(p["skill_level"] for p in team) / len(team)
 
-# ─────────────────────────────────────────────
-# ELO RECALCULATION
-# ─────────────────────────────────────────────
 def recalc_elo(player_skill: float, team_skill: float, opp_skill: float, result: float, k: float = 32.0) -> float:
-    """
-    result: 1=win, 0=loss, 0.5=draw
-    """
     expected = 1.0 / (1.0 + math.pow(10, (opp_skill - team_skill) / 20.0))
     new_skill = player_skill + k * (result - expected)
     return max(0.0, min(100.0, new_skill))
@@ -202,7 +210,7 @@ async def check_and_award_achievements(conn, user_id: int):
         )
 
 # ─────────────────────────────────────────────
-# BOT
+# BOT INIT
 # ─────────────────────────────────────────────
 bot = Bot(
     token=BOT_TOKEN,
@@ -224,7 +232,6 @@ def mini_app_keyboard() -> InlineKeyboardMarkup:
 @router.message(F.text == "/start")
 async def cmd_start(message: Message):
     uid = message.from_user.id
-    # auto-register minimal
     async with pool.acquire() as conn:
         await conn.execute(
             """INSERT INTO users (id, username, name)
@@ -341,11 +348,10 @@ async def cmd_stats(message: Message):
     await message.answer(txt)
 
 # ─────────────────────────────────────────────
-# BACKGROUND: match reminders
+# BACKGROUND TASK: REMINDERS
 # ─────────────────────────────────────────────
 REMINDER_CHAT_ID = os.getenv("REMINDER_CHAT_ID", "")
 async def reminders_loop():
-    """Check scheduled matches and send reminders 2h and 30min before."""
     notified_2h: set[str] = set()
     notified_30: set[str] = set()
     while True:
@@ -383,12 +389,11 @@ async def reminders_loop():
         await asyncio.sleep(60)
 
 # ─────────────────────────────────────────────
-# FASTAPI
+# FASTAPI APP & LIFESPAN
 # ─────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
-    # set webhook
     if WEBHOOK_URL:
         wh_url = WEBHOOK_URL.rstrip("/") + "/webhook"
         secret_token_clean = BOT_TOKEN[:32].replace(":", "_")
@@ -399,7 +404,6 @@ async def lifespan(app: FastAPI):
             log.warning("Webhook conflict (already set elsewhere)")
         except Exception as e:
             log.error(f"set_webhook error: {e}")
-    # start reminders bg task
     task = asyncio.create_task(reminders_loop())
     yield
     task.cancel()
@@ -412,7 +416,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# ── Pydantic models ──
+# ─────────────────────────────────────────────
+# PYDANTIC MODELS
+# ─────────────────────────────────────────────
 class RegisterReq(BaseModel):
     name: str = ""
     position: str = "unknown"
@@ -425,8 +431,8 @@ class MatchCreateReq(BaseModel):
 
 class ScoreReq(BaseModel):
     match_id: str
-    team: str  # 'a' or 'b'
-    delta: int  # +1 or -1
+    team: str
+    delta: int
 
 class FinishReq(BaseModel):
     match_id: str
@@ -438,40 +444,65 @@ class VoteMVPReq(BaseModel):
 class RegisterIntentReq(BaseModel):
     match_id: str
 
-# ── Helper: extract init_data from request ──
-async def get_user_from_request(request: Request) -> dict:
-    init_data = request.headers.get("X-Telegram-Init-Data", "")
-    if not init_data:
-        # try query param fallback
-        init_data = request.query_params.get("init_data", "")
-    if not init_data:
-        raise HTTPException(401, "missing init_data")
-    try:
-        return await get_or_create_user_from_initdata(init_data)
-    except ValueError as e:
-        raise HTTPException(403, f"invalid init_data: {e}")
+class GoalReq(BaseModel):
+    match_id: str
+    team: str
+    player_id: str
+    delta: int = 1
 
+class CloseVotingReq(BaseModel):
+    match_id: str
+
+class ScheduleReq(BaseModel):
+    scheduled_at: str
+    location: str = ""
+
+# ─────────────────────────────────────────────
+# HELPERS
+# ─────────────────────────────────────────────
 def is_admin(user: dict) -> bool:
     return user["id"] in ADMIN_IDS
 
-# ── Routes ──
+# ─────────────────────────────────────────────
+# SERVE MINI APP FRONTEND (Multi-route)
+# ─────────────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
-async def index():
+@app.get("/mini-app", response_class=HTMLResponse)
+@app.get("/miniapp", response_class=HTMLResponse)
+async def serve_mini_app():
     html_path = os.path.join(os.path.dirname(__file__), "static", "index.html")
     with open(html_path, "r", encoding="utf-8") as f:
         return HTMLResponse(f.read())
 
+# ─────────────────────────────────────────────
+# TELEGRAM WEBHOOK & HEALTH
+# ─────────────────────────────────────────────
+@app.post("/webhook")
+async def telegram_webhook(request: Request):
+    secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+    if secret != BOT_TOKEN[:32].replace(":", "_"):
+        raise HTTPException(403, "bad secret")
+    data = await request.json()
+    update = Update.model_validate(data, context={"bot": bot})
+    await dp.feed_update(bot, update)
+    return {"ok": True}
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+# ─────────────────────────────────────────────
+# API ROUTES
+# ─────────────────────────────────────────────
 @app.get("/api/me")
 async def api_me(request: Request):
     user = await get_user_from_request(request)
-    # attach achievements
     async with pool.acquire() as conn:
         achs = await conn.fetch(
             "SELECT achievement_code FROM user_achievements WHERE user_id=$1",
             user["id"]
         )
     user["achievements"] = [a["achievement_code"] for a in achs]
-    # all achievements meta
     user["all_achievements"] = ACHIEVEMENTS
     return user
 
@@ -518,9 +549,7 @@ async def api_match_create(req: MatchCreateReq, request: Request):
     if len(req.player_ids) < 2:
         raise HTTPException(400, "need at least 2 players")
     async with pool.acquire() as conn:
-        # cancel old active/scheduled matches
         await conn.execute("UPDATE matches SET status='finished' WHERE status IN ('active','scheduled')")
-        # fetch player data
         rows = await conn.fetch(
             "SELECT * FROM users WHERE id = ANY($1::bigint[])",
             req.player_ids
@@ -576,7 +605,6 @@ async def api_match_score(req: ScoreReq, request: Request):
         row = await conn.fetchrow("SELECT * FROM matches WHERE id=$1", req.match_id)
         if not row or row["status"] != "active":
             raise HTTPException(400, "no active match")
-        # update score
         if req.team == "a":
             new_score = max(0, row["score_a"] + req.delta)
             await conn.execute("UPDATE matches SET score_a=$1 WHERE id=$2", new_score, req.match_id)
@@ -585,15 +613,8 @@ async def api_match_score(req: ScoreReq, request: Request):
             await conn.execute("UPDATE matches SET score_b=$1 WHERE id=$2", new_score, req.match_id)
     return {"ok": True, "new_score": new_score}
 
-class GoalReq(BaseModel):
-    match_id: str
-    team: str          # 'a' or 'b'
-    player_id: str     # string BIGINT
-    delta: int = 1     # +1 or -1
-
 @app.post("/api/match/goal")
 async def api_match_goal(req: GoalReq, request: Request):
-    """Increment/decrement goals_in_match for a specific player + update team score."""
     user = await get_user_from_request(request)
     async with pool.acquire() as conn:
         row = await conn.fetchrow("SELECT * FROM matches WHERE id=$1", req.match_id)
@@ -631,12 +652,10 @@ async def api_match_finish(req: FinishReq, request: Request):
         skill_b = team_skill(team_b)
         result_a = 1.0 if sa > sb else (0.0 if sa < sb else 0.5)
         result_b = 1.0 - result_a
-        # update match
         await conn.execute(
             "UPDATE matches SET status='finished', finished_at=now() WHERE id=$1",
             req.match_id
         )
-        # update each player
         award_codes: list[tuple[int,str]] = []
         async with conn.transaction():
             for p in team_a:
@@ -671,14 +690,12 @@ async def api_match_finish(req: FinishReq, request: Request):
                 )
                 if goals_in >= 3:
                     award_codes.append((pid,"hat_trick"))
-            # award achievements
             for pid, code in award_codes:
                 await conn.execute(
                     """INSERT INTO user_achievements (user_id, achievement_code)
                        VALUES ($1,$2) ON CONFLICT DO NOTHING""",
                     pid, code
                 )
-            # check general achievements for all participants
             for p in team_a + team_b:
                 await check_and_award_achievements(conn, int(p["id"]))
     return {"ok": True, "score_a": sa, "score_b": sb}
@@ -692,14 +709,12 @@ async def api_matches_history(request: Request):
                FROM matches WHERE status='finished'
                ORDER BY finished_at DESC LIMIT 10"""
         )
-    # collect all player ids
     all_ids: set[int] = set()
     for r in rows:
         for p in (r["team_a"] if isinstance(r["team_a"],list) else json.loads(r["team_a"])):
             all_ids.add(int(p["id"]))
         for p in (r["team_b"] if isinstance(r["team_b"],list) else json.loads(r["team_b"])):
             all_ids.add(int(p["id"]))
-    # fetch names
     name_map = {}
     if all_ids:
         async with pool.acquire() as conn:
@@ -737,10 +752,8 @@ async def api_vote_mvp(req: VoteMVPReq, request: Request):
         row = await conn.fetchrow("SELECT * FROM matches WHERE id=$1", req.match_id)
         if not row:
             raise HTTPException(404, "match not found")
-        # can only vote on finished matches
         if row["status"] != "finished":
             raise HTTPException(400, "match not finished yet")
-        # verify candidate is participant
         all_players = []
         for col in ("team_a","team_b"):
             t = row[col] if isinstance(row[col],list) else json.loads(row[col])
@@ -754,12 +767,8 @@ async def api_vote_mvp(req: VoteMVPReq, request: Request):
         )
     return {"ok": True}
 
-class CloseVotingReq(BaseModel):
-    match_id: str
-
 @app.post("/api/match/close_voting")
 async def api_close_voting(req: CloseVotingReq, request: Request):
-    """Tally MVP votes and award winner."""
     user = await get_user_from_request(request)
     async with pool.acquire() as conn:
         row = await conn.fetchrow("SELECT * FROM matches WHERE id=$1", req.match_id)
@@ -790,11 +799,6 @@ async def api_close_voting(req: CloseVotingReq, request: Request):
         "mvp_name": (w["name"] or w["username"] or str(winner_id)) if w else str(winner_id),
         "votes": [{"candidate_id": str(v["candidate_id"]), "count": v["cnt"]} for v in votes]
     }
-
-# ── Scheduled match creation (for pre-registration) ──
-class ScheduleReq(BaseModel):
-    scheduled_at: str
-    location: str = ""
 
 @app.post("/api/match/schedule")
 async def api_match_schedule(req: ScheduleReq, request: Request):
@@ -854,25 +858,10 @@ async def api_register_intent(req: RegisterIntentReq, request: Request):
         )
     return {"ok": True}
 
-# ── Telegram Webhook endpoint ──
-@app.post("/webhook")
-async def telegram_webhook(request: Request):
-    secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
-    if secret != BOT_TOKEN[:32].replace(":", "_"):
-        raise HTTPException(403, "bad secret")
-    data = await request.json()
-    update = Update.model_validate(data, context={"bot": bot})
-    await dp.feed_update(bot, update)
-    return {"ok": True}
-
 @app.get("/api/achievements")
 async def api_achievements(request: Request):
     user = await get_user_from_request(request)
     return {"achievements": ACHIEVEMENTS}
-
-@app.get("/health")
-async def health():
-    return {"status": "ok", "ts": datetime.now(timezone.utc).isoformat()}
 
 if __name__ == "__main__":
     import uvicorn
