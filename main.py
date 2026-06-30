@@ -68,7 +68,14 @@ async def init_db():
         schema_sql = f.read()
     async with pool.acquire() as conn:
         await conn.execute(schema_sql)
-    log.info("DB initialized")
+    # Apply migrations
+    migration_path = os.path.join(os.path.dirname(__file__), "migration.sql")
+    if os.path.exists(migration_path):
+        with open(migration_path, "r") as f:
+            migration_sql = f.read()
+        async with pool.acquire() as conn:
+            await conn.execute(migration_sql)
+    log.info("DB initialized & migrated")
 
 # ─────────────────────────────────────────────
 # TELEGRAM INIT-DATA VALIDATION
@@ -384,8 +391,9 @@ async def lifespan(app: FastAPI):
     # set webhook
     if WEBHOOK_URL:
         wh_url = WEBHOOK_URL.rstrip("/") + "/webhook"
+        secret_token_clean = BOT_TOKEN[:32].replace(":", "_")
         try:
-            await bot.set_webhook(wh_url, secret_token=BOT_TOKEN[:32])
+            await bot.set_webhook(wh_url, secret_token=secret_token_clean)
             log.info(f"Webhook set: {wh_url}")
         except TelegramConflictError:
             log.warning("Webhook conflict (already set elsewhere)")
@@ -850,7 +858,7 @@ async def api_register_intent(req: RegisterIntentReq, request: Request):
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
-    if secret != BOT_TOKEN[:32]:
+    if secret != BOT_TOKEN[:32].replace(":", "_"):
         raise HTTPException(403, "bad secret")
     data = await request.json()
     update = Update.model_validate(data, context={"bot": bot})
